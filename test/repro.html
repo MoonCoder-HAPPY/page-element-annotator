@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>页面元素注释 · 缺陷复现页</title>
+    <style>
+      body {
+        font: 15px/1.7 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        margin: 0 auto;
+        max-width: 780px;
+        padding: 32px 24px 80px;
+        color: #18181b;
+      }
+      h1 { font-size: 20px; margin: 0 0 6px; }
+      .lede { color: #52525b; margin: 0 0 28px; }
+      section {
+        border: 1px solid #e4e4e7; border-radius: 10px;
+        padding: 16px 18px; margin-bottom: 20px;
+      }
+      h2 { font-size: 15px; margin: 0 0 4px; }
+      .expect { color: #52525b; font-size: 13px; margin: 0 0 12px; }
+      .row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+      .label { flex: 0 0 auto; font-size: 12px; color: #52525b; min-width: 200px; }
+      code {
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #f4f4f5; padding: 1px 5px; border-radius: 4px;
+      }
+      .bad { color: #b91c1c; font-weight: 600; }
+      .good { color: #15803d; font-weight: 600; }
+      .tip {
+        background: #fafafa; border-left: 3px solid #2563eb;
+        padding: 10px 14px; font-size: 13px; margin: 16px 0 0; border-radius: 0 6px 6px 0;
+      }
+      ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: #3f3f46; }
+    </style>
+  </head>
+  <body>
+    <h1>元素抓取 · 缺陷复现页</h1>
+    <p class="lede">
+      （扩展内部页面版 —— 这个地址扩展可以注入，本地 file:// 打开的副本不行。）
+      用「元素抓取」扩展依次抓下面每个方框里的元素，看粘出来的文本。
+    </p>
+
+    <section>
+      <h2>缺陷 1：密码值在属性顺序不同时泄漏</h2>
+      <p class="expect">
+        抓下面三个输入框中的<strong>第一个</strong>和<strong>第二个</strong>，对比粘出来的
+        <code>HTML:</code> 段。
+      </p>
+
+      <div class="row">
+        <span class="label"><span class="good">A</span> · <code>type</code> 在前（应有保护）</span>
+        <input id="pw-a" type="password" value="SECRET_A_111" />
+      </div>
+      <div class="row">
+        <span class="label"><span class="bad">B</span> · <code>value</code> 在前（会泄漏）</span>
+        <input id="pw-b" value="SECRET_B_222" type="password" />
+      </div>
+      <div class="row">
+        <span class="label"><span class="bad">C</span> · hidden 且 <code>value</code> 在前</span>
+        <input id="pw-c" value="SECRET_C_333" type="hidden" />
+      </div>
+
+      <p class="expect" style="margin-top: 12px">
+        <span class="good">期望</span>：三个都不该出现明文，应显示为
+        <code>value="[redacted]"</code>。<br />
+        <span class="bad">实际</span>：A 正常，<strong>B 与 C 会原样带出</strong>
+        <code>SECRET_B_222</code> / <code>SECRET_C_333</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>缺陷 2：截图失败时不给原因</h2>
+      <p class="expect">
+        先进入抓取模式，然后<strong>先往上滚</strong>，再点下面这个按钮 ——
+        它离视口很远，插件会尝试自动滚动过去截图。
+      </p>
+      <div style="height: 2200px; display: grid; place-items: center; color: #a1a1aa">
+        （这一大段空白是为了把目标推到视口外）
+      </div>
+      <div class="row">
+        <span class="label"><span class="bad">D</span> · 视口外目标</span>
+        <button id="far-target" type="button" style="padding: 8px 16px">视口外的按钮</button>
+      </div>
+      <p class="expect" style="margin-top: 12px">
+        <span class="good">期望</span>：若截图失败，页内提示应写明<strong>具体原因</strong>
+        （如"元素不在视口内且滚动后仍不可达"）。<br />
+        <span class="bad">实际</span>：提示只有"已复制 · … · WxH"，<strong>不提截图的事</strong>。
+      </p>
+    </section>
+
+    <div class="tip">
+      <strong>怎么看出粘出来的内容是什么</strong>
+      <ol>
+        <li>粘到浏览器地址栏（能看全文）</li>
+        <li>或粘到一个空白文本文件</li>
+        <li>或按 F12 打开 Console，输入：
+          <code>navigator.clipboard.readText().then(console.log)</code>
+        </li>
+      </ol>
+      <p style="margin: 8px 0 0; font-size: 12px; color: #52525b">
+        注意：这个页面本身是扩展页面，Console 属于扩展上下文，
+        上面的命令会读扩展的剪贴板权限 —— 能正常工作。
+      </p>
+    </div>
+  </body>
+</html>

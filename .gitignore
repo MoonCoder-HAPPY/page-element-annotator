@@ -1,0 +1,15 @@
+# 打包产物（`node tools/package.mjs` 生成）
+dist/
+
+# 操作系统与编辑器杂项
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# 依赖与日志（本项目零依赖，这几条是防御性写法：
+# 万一以后有人装了什么，不至于把 node_modules 提上来）
+node_modules/
+npm-debug.log*
+*.log

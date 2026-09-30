@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>页面元素注释</title>
+    <!--
+      主题必须在**首屏绘制前**定下来，否则深色模式下会先闪一下白底。
+      所以 theme.js 同步加载（不 defer / 不 async），并且用 localStorage
+      （同步读取，没有 await 就没有闪烁窗口）。
+    -->
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="index.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="bar-title">
+        <strong>页面元素注释</strong>
+
+        <!-- 外观：iOS 的三段式分段控件（跟随系统 / 浅色 / 深色） -->
+        <div id="theme-switch" class="segmented" role="group" aria-label="外观主题">
+          <button type="button" data-theme-value="system" aria-pressed="false" title="跟随系统外观">
+            自动
+          </button>
+          <button type="button" data-theme-value="light" aria-pressed="false" title="始终使用浅色">
+            浅色
+          </button>
+          <button type="button" data-theme-value="dark" aria-pressed="false" title="始终使用深色">
+            深色
+          </button>
+        </div>
+      </div>
+      <div class="bar-actions">
+        <!--
+          注释入口（只剩一个了，快捷键整套已按用户要求删除）。
+
+          这里原本有第二个「悬停注释」入口，区别被写成"鼠标停在元素上即可、
+          不需要点击"。**那句话是错的**：两个入口一直都是**左键点击**才抓，
+          悬停只用来高亮预览（那条"停 400ms 自动捕获"早就按用户要求删了）。
+          所以悬停按钮点下去什么额外效果都没有 —— 用户要求去掉它，是对的。
+
+          hover 才出现的内容（下拉菜单、气泡提示）依然能抓：抽取发生在点击那一刻。
+        -->
+        <button
+          id="start-element-note"
+          type="button"
+          class="bar-btn primary-note"
+          aria-label="元素注释：点页面上的元素并写说明"
+        >
+          <svg class="icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path
+              d="M8 3v10M3 8h10"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span id="start-element-note-label">元素注释</span>
+        </button>
+        <!--
+          ⚠️ 这里原本还有第二个按钮「悬停注释」。
+
+          用户要求去掉它："现在元素注释我看也具备 悬停注释的功能了，
+          我觉得可以直接去掉悬停注释这个按钮了。"
+
+          成立：**两个入口的行为早就一样了** —— 都是左键点击元素才抓
+          （悬停只用来高亮，不自动抓取；那条 400ms 自动捕获早就按用户要求删了）。
+          留着一个点了之后什么额外效果都没有的按钮，只会让人以为是两种模式。
+
+          随之删掉的还有整套 `mode` 机制（面板的 `mode` 参数、worker 的
+          `pendingHoverGrab`、页面里的 `armedMode`）—— 只剩一个入口之后它就是死代码。
+        -->
+      </div>
+    </header>
+
+    <!--
+      面板内滚动区。
+
+      为什么要把滚动限制在这里，而不是让文档自己滚：
+      文档级滚动条**出现/消失**时会改变内容可用宽度，于是每次筛选结果变多
+      都会把整块界面挤一下 —— 用户看到的就是"元素跳来跳去"。
+      现在：顶栏固定不动，只有这一块滚；它的高度固定，滚动条出现与否都不影响
+      其它元素的宽度（外加 `scrollbar-gutter: stable` 预留槽位）。
+    -->
+    <div class="scroll-area">
+
+    <!--
+      提示位**常驻**（不再 hidden）：空闲时显示标语，操作后显示结果。
+      文案由 JS 填（`clearNotice()` 会把标语放上去），这里留空是初始占位。
+    -->
+    <p id="notice" class="notice muted" role="status"></p>
+
+    <!--
+      注释输入卡片 —— 用户点了元素之后在这里写注释。
+
+      ⚠️ 输入框放面板里，不放进独立窗口：那条路试过，真机上它带着一圈操作系统
+      标题栏（最小化/最大化/关闭），用户反馈"不希望用户能感觉到这是一个独立的
+      浏览器弹窗"。而 Chromium 的 `windows.json` 里 `frameless` / `titleBar` /
+      `borderless` 这些词一次都没出现过 —— 扩展 API 造不出无边框窗口。
+
+      面板本来就是我们自己的文档、没有窗口边框，而且用户是从这里点「元素注释」
+      才开始框选的，它一定是开着的。所以这是唯一既无边框、又不会和页面抢焦点的
+      位置。
+    -->
+    <div id="annotation-composer" class="annotation-composer" hidden>
+      <div class="annotation-target" id="annotation-target"></div>
+      <!--
+        页面刷新/导航后显示的一行说明（见 index.js 里 tabs.onUpdated 那段）。
+
+        刷新会让高亮框消失，但**已经抽好的 payload 与截图还在** ——
+        用户写了一半的注释不该因此丢掉。这行字同时说清"什么没了"和"什么还在"。
+      -->
+      <div id="annotation-note" class="annotation-note" hidden></div>
+      <textarea
+        id="annotation-input"
+        class="annotation-input"
+        rows="3"
+        placeholder="例如：按钮太淡了，改成主色"
+        aria-label="这个元素要改什么"
+      ></textarea>
+      <div class="annotation-actions">
+        <!--
+          提示里**不提 Esc**：用户要求"弹窗不再支持通过 ESC 关闭，通过 取消 按钮关闭"。
+          写了却没生效，比不写更让人困惑。
+        -->
+        <span class="annotation-hint">Ctrl+Enter 添加</span>
+        <button id="annotation-cancel" type="button" class="mini">取消</button>
+        <button id="annotation-add" type="button" class="mini primary">添加</button>
+      </div>
+    </div>
+
+    <!--
+      授权补救：Chrome 的 activeTab 只在「点图标 / 按快捷键」那一刻授予，
+      而且页面一导航就撤销。面板是常驻的，所以从面板点「进入抓取模式」时
+      常常已经没有授权了。这里给一个**用户自己就能走完**的补救入口。
+      按钮默认隐藏，只有真的遇到权限失败才出现。
+    -->
+    <div id="grant-row" class="grant-row" hidden>
+      <button id="grant-host" type="button" class="primary">授权访问所有网站</button>
+      <span class="grant-hint">只需一次：之后从面板直接抓取与截图都不再需要重复授权</span>
+    </div>
+
+    <!--
+      设置。快捷键与容量合在一处，位置在**全选按钮上方**，默认展开但**可收起**。
+
+      用户先要求"常驻展开"，后来要求"支持收起/展开" —— 两者不矛盾：
+      默认 `open`（打开面板就能看到容量与快捷键），需要时点标题收起，
+      把纵向空间让给列表。`<details>` 原生就是这个行为，也不需要额外 JS。
+    -->
+    <details class="settings" open>
+      <summary>
+        <span class="settings-title">设置</span>
+        <!--
+          用量与「设置」**同一行**（用户要求）。
+
+          它放这里而不是设置体里，是因为它是"一览"信息 —— 用户扫一眼标题行
+          就该知道还剩多少空间，不必先展开再往下找。而它又确实属于设置，
+          放在标题行右侧是位置与归属都对的做法。
+
+          放在 `summary` **内部**（不是和它并列）是必需的：`<summary>` 是
+          `<details>` 的开关，和它并列的元素点下去不会展开/收起。
+        -->
+        <span id="capacity-line" class="capacity-line"></span>
+      </summary>
+      <div class="settings-body">
+        <div class="setting-block">
+          <div class="setting-label">容量</div>
+          <div class="setting-pair">
+            <label for="setting-max-records">最多保存</label>
+            <input
+              id="setting-max-records"
+              type="number"
+              min="1"
+              max="1000"
+              step="1"
+              inputmode="numeric"
+            />
+            <span class="unit">条</span>
+
+            <label for="setting-max-bytes">最多占用</label>
+            <input
+              id="setting-max-bytes"
+              type="number"
+              min="1"
+              max="512"
+              step="1"
+              inputmode="numeric"
+            />
+            <span class="unit">MB</span>
+          </div>
+          <!-- 文案由 JS 填（下限随当前用量变），这里只是初始占位。 -->
+          <p id="setting-range" class="setting-range">取值范围读取中…</p>
+          <div class="setting-actions">
+            <button id="setting-save" type="button" class="mini">保存设置</button>
+            <button id="setting-reset" type="button" class="mini">恢复默认</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!--
+      全选：勾上 = 选中当前全部记录，导出/删除就能一次做完。
+
+      可点区域**只包含复选框和它的文字**，不是整行。
+      我第一版用 <label> 包住整行让"整行可点"，但那一行有半屏空白 ——
+      用户点空白处却改了选中状态，反馈原话是"我没点击到文字也会触发全选"。
+      那确实是意外触发：界面上的空白区域通常意味着"这里什么都不做"。
+    -->
+    <div id="select-all-row" class="select-all" hidden>
+      <label class="select-all-hit">
+        <input id="select-all" type="checkbox" />
+        <span id="select-all-label">全选</span>
+      </label>
+      <!--
+        搜索框固定在全选行的右侧。
+
+        放在这一行而不是别处：全选、导出、清空三个动作都**作用于搜索结果**，
+        搜索框和它们在同一行，这个关系一眼就能看出来。
+        （它不会随列表滚动跑掉——列表滚动的只是下面那一块。）
+      -->
+      <input
+        id="record-search"
+        type="search"
+        class="record-search"
+        placeholder="搜索注释…"
+        aria-label="按标题搜索记录"
+        autocomplete="off"
+      />
+      <!--
+        导出与清空**跟着全选走**（用户要求："放到全选按钮的右边来，我觉得这个比较合理"）。
+
+        确实更合理：这两个动作都**作用于当前搜索出来的结果**，而"作用范围"这件事
+        是由全选按钮表达的。放到顶栏去，它们和"注释模式"那两个入口挤在一起，
+        看起来像是同一类动作，实际完全不是。
+      -->
+      <button id="export-selected" type="button" class="bar-btn export-btn" aria-label="导出为 Markdown 文件">
+        导出全部
+      </button>
+      <button id="clear-all" type="button" class="bar-btn" aria-label="清空全部抓取历史">
+        清空
+      </button>
+    </div>
+
+    <ul id="records" class="records" aria-label="抓取记录列表"></ul>
+
+    <p id="filter-note" class="filter-note" hidden></p>
+
+    <p id="empty" class="empty" hidden>
+      还没有记录。<br />点「元素注释」，然后在页面上点一个元素。
+    </p>
+
+    <!-- 空态要分清两种：「一条都没有」和「筛完一条不剩」。
+         混成一句的话，用户会以为记录被删了。 -->
+    <p id="no-match" class="empty" hidden>
+      没有匹配的记录。<br />换个词试试，或清空搜索框。
+    </p>
+
+    <!-- 截图管道诊断：真机上截图一直失败，而失败点无从判断。
+         这里把每一步的中间产物显示出来，不需要开控制台。 -->
+    <!--
+      截图管道诊断。**平时隐藏**，只在最近有失败时自动出现（见 renderShotDiagnostics）。
+
+      保留它的理由：截图曾经连续几轮失败，全靠这块逐阶段记录才定位到根因。
+      删掉它，下次再出问题就只能靠猜。但它也确实不该一直占着面板底部。
+    -->
+    <details class="diag" id="shot-diag-panel" hidden>
+      <summary>截图没成功？看诊断</summary>
+      <div class="diag-body">
+        <div class="diag-actions">
+          <button id="shot-diag-clear" type="button">清空并重抓一次</button>
+          <button id="shot-diag-reload" type="button">刷新</button>
+        </div>
+        <div id="shot-diag"></div>
+      </div>
+    </details>
+
+    </div><!-- /.scroll-area -->
+
+    <script src="../shared/text-utils.js"></script>
+    <script src="../shared/surrogate-safe-string.js"></script>
+    <script src="../shared/budget.js"></script>
+    <script src="../shared/format.js"></script>
+    <!-- 导出压缩包时要把 worker 回传的 base64 解成字节再交给 blob URL。 -->
+    <script src="../shared/zip.js"></script>
+    <script src="index.js"></script>
+  </body>
+</html>

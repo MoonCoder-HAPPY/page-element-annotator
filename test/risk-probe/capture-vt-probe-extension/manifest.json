@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "captureVisibleTab 探针",
+  "version": "1.0.0",
+  "description": "一次性探针：测量 chrome.tabs.captureVisibleTab 的调用频率限制。跑完即可移除。",
+  "permissions": ["activeTab", "storage", "downloads"],
+  "background": {
+    "service_worker": "worker.js"
+  },
+  "action": {
+    "default_title": "跑一次 captureVisibleTab 频率探针"
+  }
+}

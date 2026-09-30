@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>_debugSource 可用率实测</title>
+    <style>
+      body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 24px; }
+      #result { margin-top: 16px; padding: 12px; background: #fafafa; border: 1px solid #e4e4e7; border-radius: 8px; }
+      code { font: 12px/1.5 ui-monospace, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>_debugSource 可用率实测</h1>
+    <p>这个页面用 <strong>React 的 development 构建</strong>（含 <code>jsxDEV</code>）渲染一棵组件树，
+      然后检查 fiber 上到底有没有源码位置信息。用 development 构建是关键——生产构建下
+      <code>_debugSource</code> 本来就不该存在，拿它测只会得到"当然没有"。</p>
+    <div id="root"></div>
+    <div id="result">等待渲染…</div>
+
+    <script src="../vendor/react-18.development.js"></script>
+    <script src="../vendor/react-dom-18.development.js"></script>
+    <!-- 项目自己的定位器：先加载依赖，再加载它，最后渲染。 -->
+    <script src="../../../src/shared/text-utils.js"></script>
+    <script src="../../../src/shared/surrogate-safe-string.js"></script>
+    <script src="../../../src/shared/budget.js"></script>
+    <script src="../../../src/shared/format.js"></script>
+    <script src="../../../src/shared/attribute-allowlist.js"></script>
+    <script src="../../../src/shared/secret-patterns.js"></script>
+    <script src="../../../src/content/source-locator.js"></script>
+    <script src="react-tree.jsx.js"></script>
+  </body>
+</html>

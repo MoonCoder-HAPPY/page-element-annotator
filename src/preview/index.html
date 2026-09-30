@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>元素截图 · 页面元素注释</title>
+    <style>
+      /*
+       * 独立的截图查看页。
+       *
+       * 为什么不让侧边面板自己"全屏"：面板本身只有约 320px 宽，浮层再大也受它限制。
+       * 真正能看到全貌、能缩放、能右键另存，需要一个普通标签页。
+       *
+       * 配色刻意用深底：截图常是浅色界面，深底能让图的边界一眼看清，
+       * 也不会让人分不清"图的边缘"和"页面背景"。
+       */
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #1c1c1e;
+        color: #f2f2f7;
+        font:
+          400 13px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'SF Pro Text',
+          'Segoe UI',
+          system-ui,
+          sans-serif;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* 工具条会随全屏自动隐藏（全屏时 display 由 JS 控制） */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: rgba(44, 44, 46, 0.92);
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        border-bottom: 1px solid rgba(84, 84, 88, 0.5);
+      }
+
+      .toolbar[hidden] {
+        display: none;
+      }
+
+      .meta {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: rgba(235, 235, 245, 0.62);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* 缩放比例显示。定一个宽度，免得数字位数变化时两边的按钮左右挪。 */
+      .zoom-level {
+        min-width: 52px;
+        color: rgba(235, 235, 245, 0.82);
+        font: 400 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        text-align: center;
+      }
+
+      button {
+        font: inherit;
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 8px;
+        background: rgba(120, 120, 128, 0.32);
+        color: #f2f2f7;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background-color 0.18s ease;
+      }
+
+      button:hover {
+        background: rgba(120, 120, 128, 0.48);
+      }
+
+      button:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(120, 120, 128, 0.5);
+      }
+
+      .stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+        overflow: auto;
+      }
+
+      .stage.plain {
+        padding: 0;
+      }
+
+      /*
+       * `contain` 是关键：截图常常很扁很宽（一条按钮、一行文字），
+       * 用 cover 会把它裁得只剩中间一块 —— 那就失去了"看全貌"的意义。
+       */
+      img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 6px;
+        background: #fff;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .status {
+        padding: 40px 20px;
+        color: rgba(235, 235, 245, 0.62);
+        text-align: center;
+        line-height: 1.8;
+        white-space: pre-wrap;
+      }
+
+      .hint {
+        color: rgba(235, 235, 245, 0.42);
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar" class="toolbar" hidden>
+      <span id="meta" class="meta"></span>
+      <button id="zoom-out" type="button" title="缩小（-）">−</button>
+      <span id="zoom-level" class="zoom-level">适应</span>
+      <button id="zoom-in" type="button" title="放大（+）">＋</button>
+      <button id="zoom-fit" type="button" title="适应窗口（0）">适应窗口</button>
+      <button id="zoom-100" type="button" title="原始尺寸（1）">100%</button>
+      <button id="save" type="button" title="把这张截图另存为 PNG">另存为 PNG</button>
+      <button id="close" type="button" title="关闭这个标签页">关闭</button>
+    </div>
+    <div id="stage" class="stage">
+      <p class="status">正在读取截图…</p>
+    </div>
+    <script src="preview.js"></script>
+  </body>
+</html>

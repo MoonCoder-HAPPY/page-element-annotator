@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>页面元素注释 · 金样例页面</title>
+    <style>
+      body {
+        font: 15px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 32px;
+        background: #fff;
+        color: #111;
+      }
+      .card {
+        max-width: 520px;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 24px;
+      }
+      .cart-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 16px;
+      }
+      .btn {
+        font: inherit;
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid #1d4ed8;
+        background: #2563eb;
+        color: #fff;
+        cursor: pointer;
+      }
+      .btn-ghost {
+        background: #fff;
+        color: #1d4ed8;
+      }
+      /* 用于 AC-7：class 名里含裸子串 "secret"，但它是正常类名，不该被脱敏 */
+      .secret-banner {
+        padding: 8px 12px;
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+      }
+      .filler {
+        height: 1400px;
+      }
+      iframe {
+        width: 100%;
+        height: 120px;
+        border: 1px dashed #9ca3af;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>元素抓取金样例</h1>
+
+    <div class="card" id="cart">
+      <h2>购物车</h2>
+      <p class="cart-total">Order total: $128.40</p>
+      <p class="cart-delivery">Estimated delivery: Mar 3</p>
+      <div class="cart-actions">
+        <button id="submit-order" class="btn" type="submit" aria-label="Submit order">
+          Submit order
+        </button>
+        <button class="btn btn-ghost review-order" type="button">Review</button>
+        <button class="btn btn-ghost review-order" type="button">Review again</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>敏感值样例（AC-6 / AC-8）</h2>
+      <div>
+        <label for="pw">Password</label>
+        <input id="pw" type="password" value="hunter2-super-secret" />
+      </div>
+      <p>
+        <a id="keyed-link" href="https://user:pw@example.com/api/keys/abc123?token=xyz#frag">
+          带 userinfo 与 token 的链接
+        </a>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>误伤样例（AC-7 / S-3）</h2>
+      <div class="secret-banner" id="banner">这一段用了 .secret-banner 这个类名</div>
+      <p class="source-code" id="source-code-note">这个类名是 source-code，不该被脱敏</p>
+      <p id="password-prose">Password reset is available from the account page.</p>
+    </div>
+
+    <div class="card">
+      <h2>超长文本与空元素（AC-20 / §14.2）</h2>
+      <div id="long-text"></div>
+      <div id="empty-box" style="width: 120px; height: 40px; border: 1px solid #ddd"></div>
+    </div>
+
+    <div class="card">
+      <h2>iframe 与 shadow DOM（§14.4 / AC-20）</h2>
+      <iframe id="frame" srcdoc="<p id='inside'>iframe 内部元素</p>"></iframe>
+      <div id="shadow-host"></div>
+    </div>
+
+    <div class="filler" id="filler">（这一大段用于把下面的元素推到视口外 —— AC-5 的滚动样例）</div>
+
+    <div class="card" id="far-away">
+      <h2>视口外的元素</h2>
+      <button id="far-button" class="btn" type="button">I am below the fold</button>
+    </div>
+
+    <script>
+      // 超长文本，用于验证 textSnippet 的 200 码元截断。
+      const longText = document.getElementById('long-text')
+      longText.textContent = Array.from(
+        { length: 60 },
+        (_, i) => '第' + (i + 1) + '项内容'
+      ).join(' ')
+
+      // Shadow DOM：验证 elementFromPoint 会返回 host 而不是内部元素。
+      const shadowHost = document.getElementById('shadow-host')
+      const shadowRoot = shadowHost.attachShadow({ mode: 'open' })
+      const shadowButton = document.createElement('button')
+      shadowButton.id = 'shadow-btn'
+      shadowButton.className = 'btn'
+      shadowButton.textContent = 'Shadow 内部按钮'
+      shadowRoot.appendChild(shadowButton)
+
+      // 供验证脚本查询的探针：页面自己记录被点击过的元素。
+      window.__fixtureClicks = []
+      document.addEventListener('click', (event) => {
+        window.__fixtureClicks.push(event.target.id || event.target.tagName)
+      })
+    </script>
+  </body>
+</html>

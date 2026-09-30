@@ -1,0 +1,1438 @@
+/*
+ * 侧边面板样式。
+ *
+ * 设计取向：**iOS / macOS 系统的观感**。
+ * 用户反馈"希望换成 iPhone 苹果那种界面质感，看着非常舒服"。落地为几条具体规则：
+ *
+ * 1. **分层**，不是一片同色。分组底色（`--bg`）承托白色卡片（`--bg-card`），
+ *    层次由背景色差表达，而不是靠边框。
+ * 2. **发丝分隔线**（`--separator`）：半透明、0.5px、只在需要的地方出现。
+ *    整块加边框是 Web 观感，iOS 用色差 + 发丝线。
+ * 3. **系统色板**：蓝 #007AFF、红 #FF3B30、绿 #34C759；深色模式换用对应高亮变体。
+ * 4. **连续圆角**：卡片 12–14px，控件 8–10px。小圆角配大卡片会立刻显得廉价。
+ * 5. **毛玻璃吸顶栏**：`backdrop-filter` 让滚动内容从半透明栏下透出来，
+ *    这是 iOS 导航栏最容易被感知的一个特征。
+ * 6. **留白要够**：宁可少放一行内容，也不要挤。
+ *
+ * 主题只认 `documentElement[data-resolved]`（由 theme.js 写入）—— 单一真相来源，
+ * 避免"媒体查询 + 属性"两套规则互相打架。
+ */
+
+:root,
+:root[data-resolved='light'] {
+  --bg: #f2f2f7;
+  --bg-card: #ffffff;
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-strong: rgba(120, 120, 128, 0.2);
+  --label: #000000;
+  --label-2: rgba(60, 60, 67, 0.6);
+  --label-3: rgba(60, 60, 67, 0.3);
+  --separator-hairline: rgba(60, 60, 67, 0.14);
+  --blue: #007aff;
+  --red: #ff3b30;
+  --green: #34c759;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --header-bg: rgba(242, 242, 247, 0.78);
+  --on-accent: #ffffff;
+}
+
+:root[data-resolved='dark'] {
+  --bg: #000000;
+  --bg-card: #1c1c1e;
+  --fill: rgba(120, 120, 128, 0.24);
+  --fill-strong: rgba(120, 120, 128, 0.36);
+  --label: #ffffff;
+  --label-2: rgba(235, 235, 245, 0.6);
+  --label-3: rgba(235, 235, 245, 0.3);
+  --separator-hairline: rgba(84, 84, 88, 0.4);
+  --blue: #0a84ff;
+  --red: #ff453a;
+  --green: #30d158;
+  --shadow-card: none;
+  --header-bg: rgba(28, 28, 30, 0.72);
+  --on-accent: #ffffff;
+}
+
+/*
+ * 只在切换主题的那一次挂过渡（theme.js 加/摘 .theme-animating）。
+ * 常驻的全局 transition 会让首屏"淡入"，也会和按钮自己的 hover 抢时间轴。
+ */
+.theme-animating,
+.theme-animating *,
+.theme-animating *::before,
+.theme-animating *::after {
+  transition:
+    background-color 0.32s ease,
+    color 0.32s ease,
+    border-color 0.32s ease,
+    box-shadow 0.32s ease !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  /* 和面板底色一致，避免滚动越界时露出浏览器默认的白/黑。 */
+  background: var(--bg);
+  /* 撑满面板高度：下面靠 flex 把滚动限制在内层容器里。 */
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  /*
+   * 面板本身**不滚动**，滚动交给 `.scroll-area`。
+   *
+   * 文档级滚动条出现/消失会改变内容可用宽度，于是筛选结果一变多就挤一下 ——
+   * 用户看到的正是"页面元素老是动态变化、跳来跳去"。
+   * 把滚动关在内层、并给它固定高度，外层就永远不会因为滚动条而变宽变窄。
+   */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* -apple-system 在 macOS 上就是 SF Pro；其他平台退到各系统最像它的无衬线。 */
+  font:
+    400 13px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * 面板内滚动区：占满顶栏之外的全部高度，自己滚。
+ *
+ * `min-height: 0` 是必需的 —— flex item 默认 `min-height: auto`，
+ * 不加的话它会被内容撑高，`overflow` 永远不生效（滚动条根本不出现）。
+ *
+ * `scrollbar-gutter: stable` 预留滚动条槽位：这一块自己也可能时有时无地
+ * 出现滚动条，预留之后内容宽度恒定，不会再挤。
+ *
+ * `padding-top` 是**顶栏下方所有内容的统一上间距**。
+ *
+ * ⚠️ 这个值不是装饰，是为了终结一类反复出现的问题：紧跟在顶栏下面的每一块
+ * 元素，自己的 `margin-top` 都是 0，于是它永远贴死在顶栏那条发丝线上。
+ * 用户为此提过三次（设置区、筛选提示、提示框），而我每次只给"他指的那一个"
+ * 加间距 —— 下一个块排到第一位时又贴死了。
+ *
+ * 放在容器上，任何块成为第一个可见元素时都自动有间距。**要调就调这一处。**
+ */
+.scroll-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-top: 12px;
+  padding-bottom: 24px;
+}
+
+/* ------------------------------------------------------------------ 顶栏 */
+
+.bar {
+  /*
+   * 不再是 `position: sticky`：顶栏现在是 flex 列里的固定一项，
+   * 滚动只发生在它下面的 `.scroll-area` 里，所以它天然不会滚走。
+   * 保留 sticky 反而会引入一个多余的层级。
+   */
+  flex: 0 0 auto;
+  z-index: 2;
+  padding: 10px 12px 8px;
+  /* 毛玻璃：滚动的内容会从半透明栏下透出来。这是 iOS 导航栏最明显的特征。 */
+  background: var(--header-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--separator-hairline);
+}
+
+.bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.bar-title strong {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+/*
+ * 标题与外观切换之间不再有统计块。
+ * `.stats` 随那条「N 条 · 缩略图约 X MB」一起去掉了 —— 用户要求删除。
+ * 这里保留 `.bar-title` 的 `gap`，它同时负责标题与右侧分段控件之间的间距。
+ */
+
+/* 外观切换：iOS 的分段控件 */
+.segmented {
+  flex: 0 0 auto;
+  /*
+   * `margin-left: auto` 不能省。
+   *
+   * 原来标题和分段控件之间夹着一个 `flex: 1 1 auto` 的统计块，是**它**把
+   * 分段控件推到右边的。统计块按用户要求删掉后，这里必须自己撑开剩余空间，
+   * 否则分段控件会紧贴标题、整行看起来像左对齐的一坨。
+   */
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--fill);
+}
+
+.segmented button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--label-2);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.segmented button:hover {
+  color: var(--label);
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--bg-card);
+  color: var(--label);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 四颗按钮在窄面板里会换行；不换行会横向溢出、把面板撑出滚动条。 */
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ 按钮 */
+
+/*
+ * 按钮里的内联 SVG 图标。
+ *
+ * ⚠️ `flex: 0 0 auto` 是必需的，不是可有可无的。
+ *
+ * 按钮是 `inline-flex`，SVG 是它的 flex item —— 而 flex item 默认
+ * `flex-shrink: 1`。面板一窄、文字一长，浏览器就会优先**压缩图标**，
+ * 直到它变成 0 宽。表现是"按钮上本该有个加号，但什么都看不见"，
+ * 而代码里 SVG 明明在那儿。（这个类此前**一条样式都没有**，
+ * 图标能不能显示完全取决于按钮宽度够不够 —— 那是个随窗口宽度随机出现的 bug。）
+ */
+.icon {
+  flex: 0 0 auto;
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
+button {
+  font: inherit;
+  color: var(--label);
+  cursor: pointer;
+}
+
+/* 主操作：iOS 的填充按钮 */
+button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--blue);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    opacity 0.18s ease,
+    transform 0.12s ease;
+}
+
+/*
+ * 顶栏其余三个按钮。
+ *
+ * 它们原先**没有任何样式** —— 基类 button 只有 font/color/cursor，没有背景与边框，
+ * 于是渲染成了纯文字，和旁边那颗实心的「元素注释」完全不像一套东西。
+ *
+ * 这里让它们与主按钮**共用同一套形状**（同样的高度、圆角、内边距、字重），
+ * 只用色相区分语义：
+ *   蓝 = 主要动作（元素注释） · 绿 = 产出（导出） · 红 = 破坏性
+ * 形状一致是"看起来是一套"的关键，颜色只是分工。
+ */
+button.bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  /*
+   * 统一底色：白底黑字 + 一道极细描边。
+   *
+   * 原来每个按钮一个饱和色（蓝/琥珀/绿/红）。一笔下去四个色块挤在 320px 里，
+   * 看起来像四种不同的东西，而不是一排同级的操作。
+   * 现在颜色全部收掉，**分工改由文字表达**。
+   *
+   * 描边不能省：白底按钮落在浅灰面板上，没有描边会显得"没画完"。
+   */
+  border: 1px solid var(--separator-hairline);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--label);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    opacity 0.18s ease,
+    transform 0.12s ease;
+}
+
+/* 产出类动作（导出）不再单独着色 —— 见基类注释。 */
+button.bar-btn.copy {
+  background: var(--bg-card);
+}
+
+button.bar-btn.neutral {
+  background: var(--bg-card);
+  color: var(--label);
+}
+
+button.bar-btn.danger {
+  background: var(--bg-card);
+  color: var(--label);
+}
+
+/*
+ * ⚠️ 末尾那两个 `:not(...)` 都不能省。
+ *
+ * 这条的特异性是 (0,4,1)，比 `.armed-note` 与 `.armed` 的 (0,2,1) 都高 ——
+ * 于是它会把那两个状态的**底色整个换掉**，而它们的白字还在：
+ *
+ *   「取消注释」悬停 → 浅灰底 + 白字（用户："颜色变淡就可以了，不用改变颜色"）
+ *   「确认导出？」悬停 → **同一片浅灰 + 白字，完全看不清**
+ *     （用户："这完全看不清啊！清空按钮也有这个问题"）
+ *
+ * 根因是**鼠标必然停在按钮上**（用户刚点过它才进入确认态），
+ * 所以这条 hover 规则一定会命中。
+ *
+ * `button.armed:hover:not(:disabled)` 会把确认态自己的深红底换回来。
+ */
+button.bar-btn:hover:not(:disabled):not(.armed-note):not(.armed) {
+  /* 不能用 opacity：白底降透明度会把面板的灰底透出来，看起来像在变脏。 */
+  background: var(--fill);
+}
+
+button.bar-btn:active:not(:disabled) {
+  opacity: 0.74;
+  transform: scale(0.97);
+}
+
+button.bar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+button.primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+button.primary:active:not(:disabled) {
+  opacity: 0.74;
+  transform: scale(0.97);
+}
+
+button.primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 次要操作：淡填充 + 着色文字（iOS 的 tinted 按钮） */
+button.mini {
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    background-color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+button.mini:hover:not(:disabled) {
+  background: var(--fill-strong);
+}
+
+button.mini:active:not(:disabled) {
+  opacity: 0.7;
+}
+
+button.mini:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+button.mini.danger {
+  color: var(--red);
+}
+
+/* 两步确认的「确认」态：只有这一步才用更深的红，平时保持低调 */
+button.armed,
+button.danger.armed,
+button.mini.danger.armed,
+button.bar-btn.armed {
+  background: #b91c1c;
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+button.armed:hover:not(:disabled) {
+  background: #991b1b;
+  opacity: 1;
+}
+
+/*
+ * 深色主题下，破坏性确认态换成**白底 + 深红字**（用户要求）。
+ *
+ * 用户原话："深色按钮的清空下 按钮背景底色可以换成白色呀 要不然有点看不清。
+ * ……但是你要注意，白色背景色可能与现在的白字产生冲突 这个你自己调整配色。"
+ *
+ * 他说得对，而且自己指出了冲突点：浅色主题里那个 `#b91c1c` 深红在**深色面板上
+ * 几乎融进背景**（两边都暗）；而直接把底换成白色、字保持白色就完全看不见了。
+ *
+ * 所以两件事一起做：
+ *   底 → 白（在深面板上是最亮的块，一眼看到）
+ *   字 → 深红（危险语义从底色挪到文字上，不丢）
+ *
+ * 实测对比度约 10:1。浅色主题保持原样（深红底白字，本来就清楚），
+ * 因为那边面板是浅的，白底反而会和背景糊在一起。
+ *
+ * 特异性 (0,4,1) 高于上面两条，所以能稳定接管；hover 那条要再高一档。
+ */
+:root[data-resolved='dark'] button.armed,
+:root[data-resolved='dark'] button.danger.armed,
+:root[data-resolved='dark'] button.mini.danger.armed,
+:root[data-resolved='dark'] button.bar-btn.armed {
+  background: #ffffff;
+  color: #b91c1c;
+}
+
+:root[data-resolved='dark'] button.armed:hover:not(:disabled) {
+  background: #f2f2f7;
+  color: #991b1b;
+  opacity: 1;
+}
+
+/*
+ * 导出的「确认导出？」用**浅蓝**，不用红色（用户要求）。
+ *
+ * 道理是语义：红色是**危险色**，而导出只是产出一个文件 —— 它不可逆程度远低于
+ * 清空/删除，用红色是在喊错误的警报。清空与删除保留红色，导出换成浅蓝。
+ *
+ * 浅蓝底配**深蓝字**（不是白字）：浅底 + 白字是上一轮"完全看不清"的成因，
+ * 这里从设计上就避开它（实测对比度约 8:1，远超 AA 的 4.5）。
+ *
+ * 特异性 (0,3,1) 与上面的 `button.armed:hover` 打平 —— 所以下面那条 hover
+ * 必须写得更具体 (0,4,1)，否则悬停时会被红色规则接走。
+ */
+button.bar-btn.export-btn.armed {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+button.bar-btn.export-btn.armed:hover:not(:disabled) {
+  background: #bfdbfe;
+  color: #1e3a8a;
+  opacity: 1;
+}
+
+/*
+ * 焦点样式。
+ *
+ * ## 为什么不能每个控件都甩一圈蓝色 outline
+ *
+ * 用户反馈"聚焦以后出现很丑的蓝色边框"。查下来不是风格偏好，是**叠了三层**：
+ * 文本框在 `:focus` 里改了边框色、又加了一层 box-shadow 光晕，
+ * 而下面这条通用规则再叠一圈 2px 蓝色 outline —— 三条蓝色挤在同一个 1px 边框上。
+ * 那是两次改样式时各加一层、彼此没看见造成的。
+ *
+ * ## 现在的规则
+ *
+ * - **文本输入**（输入框、文本域）：不需要可见焦点环（用户看得见光标）。
+ *   `.comment-input:focus` 已经用边框色 + 淡光晕表达了聚焦，这里不再叠 outline。
+ * - **按钮 / 可聚焦控件**：只在 `:focus-visible` 时给一圈**中性**淡光晕。
+ *   `:focus-visible` 的语义正是"键盘导航时才需要看得见焦点"，鼠标点击不触发；
+ *   用中性灰而不是蓝色，因为键盘用户需要"看得见焦点"，不需要"被一个蓝框盯住"。
+ */
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--fill-strong);
+}
+
+
+/* ------------------------------------------------------------------ 通知 */
+
+/*
+ * 提示位。**常驻**，不再是"有事才出现"。
+ *
+ * 两件事：
+ *   1. 空闲时显示标语（JS 负责填文案），操作后显示结果；
+ *   2. 常驻本身消除了一处布局跳动 —— 原来它 `hidden`，每次操作都会把下面的
+ *      内容推下去一点，操作完又弹回来。
+ *
+ * 上间距由 `.scroll-area` 的 `padding-top` 统一提供，这里不重复加。
+ */
+.notice {
+  margin: 0 10px 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  color: var(--label);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/*
+ * 注释输入卡片（用户点了元素之后在这里写注释）。
+ *
+ * 用 `display: none` 而不是只在 HTML 里 hidden：`hidden` 属性会被
+ * `display: flex` 这类规则覆盖掉，那样"藏起来"就失效了 —— 面板上会常驻一个
+ * 空输入框。这类静默失效在这个项目里已经踩过（.primary-note 没样式那次）。
+ *
+ * ⚠️ 这里**不再有蓝色边框**（用户要求："最外层这个蓝色边框可以去掉，
+ * 和其它的保持一致就行"）。它原来靠 `border: 1px solid var(--blue)` 表达
+ * "这是一张正在用的卡片"，但面板里其它卡片都是"同底 + 同投影"的形态 ——
+ * 单独描一圈蓝边反而让它看起来像另一个东西。
+ */
+.annotation-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 10px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.annotation-composer[hidden] {
+  display: none;
+}
+
+/* 目标标识：一行、省略号 —— 用户只需要认出来是不是自己点的那个 */
+.annotation-target {
+  font: 400 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--label-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 页面刷新/导航后的那行说明。
+ *
+ * 用琥珀色而不是红色：它不是错误，是**环境变化**（用户自己按了刷新，
+ * 或者页面自己跳转了）。红色会让人以为扩展坏了，而这行字要消除的正是那种误解。
+ */
+.annotation-note {
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.annotation-note[hidden] {
+  display: none;
+}
+
+/*
+ * 输入框：**与详情里的 `.comment-input` 逐项对齐**（用户要求：
+ * "你和详情里面的输入框样式保持一致就可以了呀"）。
+ *
+ * ⚠️ 关键一条：聚焦时**不加 outline**。
+ *
+ * 我第一版写的是 `outline: 2px solid var(--blue)` —— 那是一圈 2px 的硬蓝环，
+ * 比房规里的表达重得多。而这个项目**已经为这件事修过一次**：
+ * 上面那条通用规则旁边记着用户的原话"聚焦以后出现很丑的蓝色边框"，
+ * 根因是边框色 + 光晕 + outline **叠了三层**。房规因此定死：
+ * **文本输入不需要可见焦点环**（用户看得见光标）。
+ *
+ * 现在的表达和 `.comment-input:focus` 一模一样：边框换成主色 + 一层柔和光晕。
+ */
+.annotation-input {
+  width: 100%;
+  box-sizing: border-box;
+  /* 只有它可以调整高度 —— 用户明确要求"只能调整输入位置的文本域高度" */
+  resize: vertical;
+  min-height: 52px;
+  padding: 9px 11px;
+  border: 1px solid var(--separator-hairline);
+  border-radius: 10px;
+  outline: none;
+  background: var(--bg);
+  color: var(--label);
+  font: 400 12.5px/1.5 inherit;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.annotation-input::placeholder {
+  color: var(--label-3);
+}
+
+.annotation-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--fill-strong);
+}
+
+.annotation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotation-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--label-2);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 标语态：只把**文字**置灰。
+ *
+ * ⚠️ 不要再动背景与阴影。
+ *
+ * 我第一版把 `background: transparent`、`box-shadow: none` 也去掉了，想让标语
+ * "低调一点"。结果它看起来是**框外的裸文字**，而不是框里的提示 ——
+ * 用户的原话是"这句话要写在提示库里面啊，然后颜色置灰就好了"。
+ *
+ * 卡片留着、只让文字变淡，才既在框里、又不和操作反馈抢注意力。
+ */
+.notice.muted {
+  color: var(--label-3);
+}
+
+/* --------------------------------------------------------- 授权补救行 */
+
+.grant-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 10px 8px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.grant-row[hidden] {
+  display: none;
+}
+
+.grant-hint {
+  flex: 1 1 auto;
+  color: var(--label-2);
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- 全选行 */
+
+/*
+ * 全选行。
+ *
+ * 容器本身**不吃点击**（`cursor` 是 default），只有里面那个 label 可点 —— 而且
+ * label 只包住复选框与文字。我第一版把 label 做成整行，于是右半屏的空白也成了
+ * 点击目标：点空白会改选中状态，用户反馈"我没点击到文字也会触发全选"。
+ * 空白区域在界面语言里意味着"这里什么都不做"，让它改状态是意外触发。
+ */
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /*
+   * 允许换行：搜索框要变宽（用户要求至少翻倍），而全选标签 + 搜索框
+   * 在一行里放不下 —— 面板只有约 320px。放不下时搜索框换到整行，
+   * 那才是"能输入"的宽度。
+   */
+  flex-wrap: wrap;
+  margin: 0 10px 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+/*
+ * 搜索框。
+ *
+ * `flex-basis: 200px` 是"尽量宽"的落点：剩余空间够就贴着全选标签继续变宽，
+ * 不够（窄面板的常态）就凭 flex-wrap 换到下一行占满整行。
+ *
+ * `min-width` 与 flex-basis 同值，避免被压到只剩几十像素 —— 一个太窄的
+ * 搜索框和不给搜索框没区别。
+ */
+.record-search {
+  flex: 1 1 200px;
+  min-width: 200px;
+  margin-left: auto;
+  padding: 6px 10px;
+  font: 400 12.5px/1.4 inherit;
+  color: var(--label);
+  background: var(--bg);
+  border: 1px solid var(--separator-hairline);
+  border-radius: 8px;
+  outline: none;
+  /* 原生 search 的清除按钮在深色下几乎看不见，自己画一个更可控。 */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.record-search::placeholder {
+  color: var(--label-3);
+}
+
+.record-search:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--fill-strong);
+}
+
+/* 有内容时把背景染成浅色，让"正在筛选中"这件事一眼可见 ——
+   否则用户看到列表变短会以为记录丢了。 */
+.record-search:not(:placeholder-shown) {
+  border-color: var(--blue);
+}
+
+.select-all[hidden] {
+  display: none;
+}
+
+/* 只有这一小块可点。负 margin 把可点区向外扩一点，手感不局促。 */
+.select-all-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  /*
+   * **宽度固定**（用户要求："占用宽度使用必须要固定住，不要老是变动"）。
+   *
+   * 标签文案会在「全选（3）」「全选结果（1）」「已选 1/3」「已选 100/100」
+   * 之间变。不固定宽度的话，每次勾选/取消整个工具栏都会跟着左右挪一下，
+   * 旁边的搜索框也被推着走。
+   *
+   * 96px 是按**最长那种文案实测**留的（「已选 100/100」约 71px 文字
+   * + 复选框 17px + 间距 9px ≈ 97px，再加余量）。
+   * 不是随手填的数字 —— 第一版填 92px，实测最长文案下仍会涨到 115px。
+   */
+  min-width: 112px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 8px;
+  color: var(--label-2);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.18s ease;
+}
+
+.select-all-hit:hover {
+  background: var(--fill);
+}
+
+.select-all-hit input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ 列表 */
+
+.records {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 每条记录是一张独立卡片（iOS 分组列表的观感） */
+.record {
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.record-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.record-check {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+.record-thumb {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--fill);
+  object-fit: cover;
+  object-position: left top;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--label-3);
+  font-size: 13px;
+}
+
+.record-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 主行：有注释时是注释，没有时是选择器 */
+.record-title {
+  color: var(--label);
+  font-size: 13.5px;
+  line-height: 1.4;
+  letter-spacing: -0.1px;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.record-title.as-selector {
+  font: 400 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--label);
+  word-break: break-all;
+  display: block;
+}
+
+.record-meta {
+  color: var(--label-2);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.record-selector {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.record-toggle {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 11.5px;
+  font-weight: 500;
+  transition: background-color 0.18s ease;
+}
+
+.record-toggle:hover {
+  background: var(--fill);
+}
+
+/* ------------------------------------------------------------------ 详情 */
+
+.record-body {
+  padding: 10px 12px 12px;
+  border-top: 0.5px solid var(--separator-hairline);
+}
+
+.kv {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  align-items: baseline;
+}
+
+.kv-key {
+  flex: 0 0 56px;
+  color: var(--label-2);
+  font-size: 11px;
+  text-align: right;
+}
+
+.kv-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 400 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.comment-block {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.comment-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 52px;
+  resize: vertical;
+  padding: 9px 11px;
+  font: 400 12.5px/1.5 inherit;
+  color: var(--label);
+  background: var(--bg);
+  border: 1px solid var(--separator-hairline);
+  border-radius: 10px;
+  outline: none;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.comment-input::placeholder {
+  color: var(--label-3);
+}
+
+.comment-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--fill-strong);
+}
+
+.comment-status {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding-top: 9px;
+  color: var(--label-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.comment-status.bad {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.shot-reason {
+  flex: 1 1 100%;
+  color: var(--label-2);
+  font-size: 11px;
+}
+
+.reason {
+  color: var(--label-2);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.empty {
+  padding: 40px 20px;
+  color: var(--label-2);
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.empty[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------ 截图诊断 */
+
+.diag {
+  margin: 14px 10px 0;
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/*
+ * 显式写 `display: none`。
+ *
+ * `<details>` 的 UA 默认是 `display: block`，只要有任何作者规则给它设了
+ * `display`，`[hidden]` 就会被压过去 —— 那时"平时隐藏"会静默失效，
+ * 面板底部永远挂着一块诊断区。这种"看起来没问题、实际没生效"的事，
+ * 显式写一行比推理可靠。
+ */
+.diag[hidden] {
+  display: none;
+}
+
+.diag summary {
+  padding: 11px 12px;
+  color: var(--label-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.diag-body {
+  padding: 0 12px 12px;
+}
+
+.diag-actions {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.diag-entry {
+  padding: 0 0 0 9px;
+  margin-bottom: 10px;
+  border-left: 2px solid var(--separator-hairline);
+}
+
+.diag-entry .stage {
+  font: 600 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.diag-entry .stage.ok {
+  color: var(--green);
+}
+
+.diag-entry .stage.bad {
+  color: var(--red);
+}
+
+.diag-entry pre {
+  margin: 3px 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--label-2);
+  font: 400 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.diag-empty {
+  color: var(--label-2);
+  font-size: 11.5px;
+}
+
+/* ------------------------------------------------- 抓取模式下的按钮状态 */
+
+/*
+ * 按钮文案在「元素注释」与「取消元素注释」之间切换。进入抓取模式后改用中性深色：
+ * 蓝底按钮在整个界面里代表"往前推进"，而此刻这个按钮的含义是"中断当前状态"，
+ * 用同一个蓝会让人以为点下去还会继续做点什么。
+ */
+button.primary.armed-grab {
+  background: var(--red);
+}
+
+button.primary.armed-grab:hover:not(:disabled) {
+  background: var(--red);
+  opacity: 0.88;
+}
+
+button.primary.armed-grab:active:not(:disabled) {
+  background: var(--red);
+  opacity: 0.74;
+}
+
+/* ------------------------------------------------------------ 大图预览 */
+
+/*
+ * 缩略图可点开看大图。cursor 用 zoom-in：那是最贴切的隐喻，
+ * 而且不需要额外加图标就能让人看出"这里能点"。
+ */
+img.record-thumb {
+  cursor: zoom-in;
+  transition: transform 0.18s ease;
+}
+
+img.record-thumb:hover {
+  transform: scale(1.06);
+}
+
+
+/* ------------------------------------------------------------ 设置（快捷键 + 容量） */
+
+/*
+ * 位置在全选按钮**上方**、授权行**下方**，并且**常驻展开**（用户要求）。
+ *
+ * 上间距是用户反复提的点 —— 那一段夹在标题栏和设置之间，间距不够会让设置
+ * 看起来像标题栏的一部分。从 10px 提到 16px，给这一块留出呼吸。
+ */
+.settings {
+  margin: 16px 10px 10px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/*
+ * 设置区：**分组**而不是一路挤到底。
+ *
+ * 用户反馈"排版密密麻麻的太丑了"。原来每一项都是同一种行、同样的间距，
+ * 视觉上分不出"快捷键"和"容量"是两组东西。现在：
+ *   - 每组有自己的一行小标题（快捷键 / 容量），组之间留双倍间距；
+ *   - 输入框与它的单位紧挨着，标签在输入框左侧；
+ *   - 主要动作（保存/恢复）单独一行，与上面的设置项拉开。
+ */
+.settings-body {
+  /* 上内边距是"快捷键"与卡片顶边之间的间距，用户反复提过。
+     现在这是**唯一**一条 .settings-body 规则（旧的重复规则已删除）。 */
+  padding: 4px 14px 16px;
+}
+
+/*
+ * 可收起/展开的标题行。
+ *
+ * 上内边距只有 4px 而不是 18px —— `<summary>` 自己已经有 13px 的上下内边距，
+ * 两者相加才是"设置"两字与卡片顶边的距离。收起时 `<details>` 只留 summary，
+ * 间距必须由 summary 自己撑住，所以不能把它压得太扁。
+ */
+.settings summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 14px;
+  color: var(--label);
+  /* 14px：比正文（13px）略大一点，作为区块标题一眼可辨。
+     原来是 12px，比正文还小 —— 标题比内容小是反直觉的。 */
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  /* 去掉原生三角，自己画一个能跟着展开状态转的（见 ::after）。 */
+  list-style: none;
+}
+
+.settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-right: 1.5px solid var(--label-3);
+  border-bottom: 1.5px solid var(--label-3);
+  /* 收起时指向右，展开时指向下 —— 不用写额外的 JS 去同步状态。 */
+  transform: rotate(-45deg);
+  transition: transform 0.18s ease;
+}
+
+.settings[open] summary::after {
+  transform: rotate(45deg);
+}
+
+/* 展开时标题与正文之间加一条分隔，收起时不需要。 */
+.settings[open] summary {
+  padding-bottom: 9px;
+}
+
+.setting-block + .setting-block {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--separator-hairline);
+}
+
+.setting-label {
+  margin-bottom: 9px;
+  color: var(--label);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* 快捷键那一组：两行提示占满剩余宽度，「自定义」贴右并与**第一行**对齐。 */
+.setting-control {
+  display: flex;
+  /* 与第一行对齐（而不是垂直居中）：两行文字时居中会让按钮落在两行之间，
+     看起来既不属于第一行也不属于第二行。 */
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/*
+ * 「自定义」按钮对齐到第一行的文字基线上。
+ *
+ * 按钮高约 26px，一行文字高约 18px —— 顶部对齐时按钮会明显往下探。
+ * 用 `align-self: flex-start` + 一个与差值对应的负上边距，把它的**内容**
+ * 拉到与第一行同一水平线上。这是刻意的手工对齐，不是随手写的数字：
+ * 差值 = (按钮高 − 行高) / 2。
+ */
+.setting-control .mini {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: -3px;
+}
+
+/*
+ * ⚠️ 这里**曾经还有一条** `.settings-body { padding: 0 12px 12px; }`。
+ *
+ * 那是折叠版（`<details>` + `<summary>`）留下的规则：当时 summary 占据了
+ * 顶部，所以正文不需要上内边距。改成常驻展开后我新写了一条，
+ * **却没有删掉旧的** —— 两条同优先级，后面的赢，于是 `padding-top` 实际是 0。
+ *
+ * 表现就是用户反复提的那个："快捷键和顶部预留一点间隙啊！"
+ * 而我几次调大卡片的外边距都没有任何效果，因为问题在卡片**内部**。
+ *
+ * 教训：重写一个块的样式时，必须把旧规则一起删掉，否则它会静默地把新规则盖掉。
+ * 下面那条断言（`.settings-body` 的 `padding-top` 必须 > 0）就是为了让这种事
+ * 下次立刻暴露。
+ */
+
+/*
+ * 用量说明。现在住在 `<summary>` 里，和「设置」**同一行**（用户要求）。
+ *
+ * `margin-left: auto` 把它推到右侧 —— 它要在标题与折叠箭头之间。
+ * 箭头用的是同一个手法（`margin-left: auto`），两个都推，顺序就是 DOM 顺序。
+ *
+ * `white-space: nowrap`：这一行本来就窄，让它折行会把 summary 撑成两行，
+ * 高度跟着跳。宁可让它占宽一点。
+ */
+.capacity-line {
+  margin: 0 0 0 auto;
+  color: var(--label-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* 达到上限时标红：这是"现在不能抓"的状态提示，不该和普通说明同色。 */
+.capacity-line.bad {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/*
+ * 两个容量上限并排一行。
+ *
+ * 它们是一对（条数 × 单条体积 ≈ 总占用），并排看才看得出关系；
+ * 各占一行会让人以为要分别保存。窄面板里靠 `flex-wrap` 兜底 ——
+ * 实在放不下时它会自己换行，而不是把内容挤出可视区。
+ */
+.setting-pair {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  row-gap: 9px;
+}
+
+.setting-pair label {
+  flex: 0 0 auto;
+  color: var(--label-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/*
+ * 输入框宽度。
+ *
+ * 原来是 56px —— 用户截图里 `1000` 被截成了 `100(`，末尾的数字整个被吃掉。
+ * 原因是右侧还有数字微调箭头（spinner）占位，56px 减去箭头只剩不到 40px。
+ *
+ * 现在给到 78px 并显式留出箭头的位置：既放得下 4 位数，
+ * 也不至于拉满整行（那会把「条」/「MB」推到很远，读起来要横跨一行）。
+ */
+.setting-pair input {
+  flex: 0 0 auto;
+  width: 78px;
+  padding: 6px 4px 6px 10px;
+  font: 400 13px/1.4 inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--label);
+  background: var(--bg);
+  border: 1px solid var(--separator-hairline);
+  border-radius: 8px;
+  outline: none;
+}
+
+.setting-pair input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--fill-strong);
+}
+
+/* 超出上限时给一个短暂的视觉提示（值已经被改成上限了）。 */
+.setting-pair input.clamped {
+  border-color: var(--red);
+}
+
+.setting-pair .unit {
+  flex: 0 0 auto;
+  color: var(--label-3);
+  font-size: 11px;
+}
+
+/* 右侧那一对（最多占用）与左侧隔开一点。 */
+.setting-pair input + .unit + label {
+  margin-left: 8px;
+}
+
+.setting-range {
+  margin: 10px 0 0;
+  color: var(--label-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.setting-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+/* --------------------------------------------------------------- 搜索筛选 */
+
+/*
+ * 筛选状态提示。紧跟在列表下方。
+ *
+ * `margin-top` 不能是 0：记录卡有圆角与投影，文字贴着它的下边缘会显得挤在一起，
+ * 看起来像卡片的一部分。用户反馈过这一点。
+ */
+.filter-note {
+  margin: 10px 10px 6px;
+  padding: 0 2px;
+  color: var(--blue);
+  font-size: 11px;
+}
+
+.filter-note[hidden] {
+  display: none;
+}
+
+/* --------------------------------------------------- 详情：长内容折叠 */
+
+/*
+ * HTML 片段与计算样式动辄几十行，全铺开会让一条记录占满整屏，
+ * 而真正需要看全的只是少数时候。
+ *
+ * 高度上限由 JS 按实测决定（见 field()），这里只负责"裁剪 + 视觉暗示"。
+ * 不用 CSS 的 max-height 固定值：同一个上限在等宽字体、不同字号下
+ * 对应的行数不一样，写在 CSS 里就没法和 JS 的测量对上。
+ */
+.kv-collapsible {
+  overflow: hidden;
+}
+
+/*
+ * 裁剪态在底部加一层渐隐。
+ *
+ * 光靠"话说到一半就断了"很难让人看出这里被裁过 —— 渐隐是"下面还有"的
+ * 通用视觉语言，比加一行说明文字省地方。
+ */
+.kv-clipped {
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+}
+
+.kv-expanded {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* 展开/收起箭头。放在标签那一列，每行位置固定，扫一眼就知道哪几项能展开。 */
+.kv-toggle {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--fill);
+  color: var(--label-2);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.kv-toggle:hover {
+  background: var(--fill-strong);
+  color: var(--label);
+}
+
+/* --------------------------------------------- 两个注释入口（各自实心底色） */
+
+/*
+ * ⚠️ 这个类**原先完全没定义**。
+ *
+ * HTML 里写的是 `bar-btn primary-note`（悬停入口删掉前还有 `bar-btn hover-note`），
+ * 而 CSS 只认 `.bar-btn` 基类 —— 它给了 `color: var(--on-accent)`（白字）却
+ * **没有背景**。于是白字落在浅色面板上，看起来就是一个**灰扑扑的禁用按钮**。
+ * 用户的原话是"这两个按钮为什么是灰色的"。
+ *
+ * 教训：给元素加语义类名时，要同时确认那个类**真的有样式**。
+ * 只加 class 不写规则，不会报错、不会警告，只会看起来不对。
+ */
+button.bar-btn.primary-note {
+  /* 与其它三个按钮同底同色 —— 差别只在文案。 */
+  background: var(--bg-card);
+  color: var(--label);
+}
+
+/*
+ * 「取消注释」态：中性深底 + 白字。
+ *
+ * 这是**唯一的**非白底状态，而且是灰阶的 —— 它要表达"再点一次就退出"，
+ * 和旁边那三个"点一下做某事"必须一眼可分，但不需要颜色。
+ */
+button.bar-btn.armed-note {
+  background: var(--label);
+  color: var(--bg-card);
+  border-color: var(--label);
+}
+
+/*
+ * ⚠️ 这里**原本有一条** `button.bar-btn.primary-note:hover` / `hover-note:hover`
+ * 设 `background: var(--fill)` —— 已经删掉。
+ *
+ * 它是"四色分工"时代的遗留，而且闯了祸：它的特异性是 (0,4,1)，
+ * 比下面 `.armed-note:hover` 的 (0,3,1) **更高**，于是「取消注释」悬停时
+ * 底色被它换成浅灰 —— 用户看到的就是"hover 上去颜色变了"。
+ *
+ * 这个类现在与其它按钮同底同色，底类那条 hover 已经覆盖了它要的效果
+ * （并且带了 `:not(.armed-note)`），所以这条规则没有存在的理由。
+ */
+button.bar-btn.armed-note:hover:not(:disabled) {
+  opacity: 0.88;
+}
